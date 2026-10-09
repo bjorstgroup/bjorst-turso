@@ -12,10 +12,12 @@
 //! own database), so a transaction there blocks nothing and rolls back nothing
 //! on drop. Use a temp file for anything concurrent.
 
+mod builder;
 mod hrana;
 mod migrate;
 mod value;
 
+pub use builder::QueryBuilder;
 pub use migrate::{migrate, Migration};
 pub use value::{FromValue, Value};
 
