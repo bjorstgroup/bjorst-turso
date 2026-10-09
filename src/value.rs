@@ -113,3 +113,77 @@ impl<T: FromValue> FromValue for Option<T> {
         }
     }
 }
+
+/// `DateTime<Utc>` is `YYYY-MM-DDTHH:MM:SS.mmmZ` text, which sorts correctly;
+/// `NaiveDate` is `YYYY-MM-DD`. Reading also accepts SQLite's own
+/// `YYYY-MM-DD HH:MM:SS`.
+#[cfg(feature = "chrono")]
+mod chrono_impls {
+    use super::*;
+    use chrono::{DateTime, NaiveDate, NaiveDateTime, SecondsFormat, Utc};
+
+    impl From<DateTime<Utc>> for Value {
+        fn from(v: DateTime<Utc>) -> Self {
+            Value::Text(v.to_rfc3339_opts(SecondsFormat::Millis, true))
+        }
+    }
+    impl From<NaiveDate> for Value {
+        fn from(v: NaiveDate) -> Self {
+            Value::Text(v.format("%Y-%m-%d").to_string())
+        }
+    }
+    impl FromValue for DateTime<Utc> {
+        fn from_value(v: &Value) -> Result<Self> {
+            let s = String::from_value(v)?;
+            if let Ok(t) = DateTime::parse_from_rfc3339(&s) {
+                return Ok(t.with_timezone(&Utc));
+            }
+            NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S%.f")
+                .map(|n| n.and_utc())
+                .map_err(|e| Error::Decode(format!("timestamp {s:?}: {e}")))
+        }
+    }
+    impl FromValue for NaiveDate {
+        fn from_value(v: &Value) -> Result<Self> {
+            let s = String::from_value(v)?;
+            NaiveDate::parse_from_str(&s, "%Y-%m-%d")
+                .map_err(|e| Error::Decode(format!("date {s:?}: {e}")))
+        }
+    }
+}
+
+/// Decimals are text, so no precision is lost to a float. Reading also accepts
+/// an integer or real column.
+#[cfg(feature = "bigdecimal")]
+mod bigdecimal_impls {
+    use super::*;
+    use bigdecimal::BigDecimal;
+    use std::str::FromStr;
+
+    impl From<BigDecimal> for Value {
+        fn from(v: BigDecimal) -> Self {
+            Value::Text(v.normalized().to_string())
+        }
+    }
+    impl From<&BigDecimal> for Value {
+        fn from(v: &BigDecimal) -> Self {
+            Value::Text(v.normalized().to_string())
+        }
+    }
+    impl FromValue for BigDecimal {
+        fn from_value(v: &Value) -> Result<Self> {
+            let text = match v {
+                Value::Text(s) => s.clone(),
+                Value::Integer(i) => i.to_string(),
+                Value::Real(f) => f.to_string(),
+                other => return Err(Error::Decode(format!("expected decimal, got {other:?}"))),
+            };
+            BigDecimal::from_str(&text).map_err(|e| Error::Decode(format!("decimal {text:?}: {e}")))
+        }
+    }
+}
+impl FromValue for Value {
+    fn from_value(v: &Value) -> Result<Self> {
+        Ok(v.clone())
+    }
+}

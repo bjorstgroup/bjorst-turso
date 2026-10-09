@@ -245,3 +245,28 @@ async fn live_turso_round_trip() {
         "rollback should have removed the probe table"
     );
 }
+
+#[cfg(all(feature = "chrono", feature = "bigdecimal"))]
+#[tokio::test]
+async fn dates_and_decimals_round_trip_without_loss() {
+    use bigdecimal::BigDecimal;
+    use chrono::{DateTime, NaiveDate, TimeZone, Utc};
+    use std::str::FromStr;
+    let db = file_db().await;
+    db.execute("CREATE TABLE t (at TEXT, d TEXT, q TEXT, def TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')), sq TEXT DEFAULT (datetime('now')))", &[]).await.unwrap();
+    let at = Utc.with_ymd_and_hms(2026, 10, 9, 7, 8, 9).unwrap();
+    let d = NaiveDate::from_ymd_opt(2026, 2, 28).unwrap();
+    let q = BigDecimal::from_str("0.0001234567891").unwrap();
+    db.execute(
+        "INSERT INTO t (at, d, q) VALUES (?1,?2,?3)",
+        &params![at, d, &q],
+    )
+    .await
+    .unwrap();
+    let r = db.query_opt("SELECT * FROM t", &[]).await.unwrap().unwrap();
+    assert_eq!(r.get::<DateTime<Utc>>("at").unwrap(), at);
+    assert_eq!(r.get::<NaiveDate>("d").unwrap(), d);
+    assert_eq!(r.get::<BigDecimal>("q").unwrap(), q);
+    r.get::<DateTime<Utc>>("def").unwrap();
+    r.get::<DateTime<Utc>>("sq").unwrap();
+}
