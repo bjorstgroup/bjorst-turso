@@ -173,13 +173,19 @@ impl Db {
         })
     }
 
-    fn local_conn(&self) -> Result<Option<libsql::Connection>> {
+    /// A local connection with foreign keys on, as Turso has them.
+    async fn local_conn(&self) -> Result<Option<libsql::Connection>> {
         match &*self.backend {
             Backend::Remote(_) => Ok(None),
             Backend::Local {
                 shared: Some(c), ..
             } => Ok(Some(c.clone())),
-            Backend::Local { db, .. } => Ok(Some(db.connect()?)),
+            Backend::Local { db, .. } => {
+                let c = db.connect()?;
+                c.query("PRAGMA foreign_keys = ON", ()).await?;
+                c.query("PRAGMA busy_timeout = 5000", ()).await?;
+                Ok(Some(c))
+            }
         }
     }
 
