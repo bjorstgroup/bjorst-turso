@@ -100,6 +100,38 @@ impl Row {
     }
 }
 
+/// A type built from a result row. See [`row_struct!`].
+pub trait FromRow: Sized {
+    fn from_row(row: &Row) -> Result<Self>;
+}
+
+/// Declare a struct and read it from a row by field name:
+///
+/// ```ignore
+/// bjorst_turso::row_struct! {
+///     struct AccountRow { id: i64, name: String, note: Option<String> }
+/// }
+/// ```
+#[macro_export]
+macro_rules! row_struct {
+    ($(#[$m:meta])* $vis:vis struct $name:ident { $($(#[$fm:meta])* $fvis:vis $f:ident : $t:ty),* $(,)? }) => {
+        $(#[$m])* $vis struct $name { $($(#[$fm])* $fvis $f: $t),* }
+        impl $crate::FromRow for $name {
+            fn from_row(row: &$crate::Row) -> $crate::Result<Self> {
+                Ok(Self { $($f: row.get(stringify!($f))?),* })
+            }
+        }
+    };
+}
+
+fn all<T: FromRow>(rows: Vec<Row>) -> Result<Vec<T>> {
+    rows.iter().map(T::from_row).collect()
+}
+
+fn one<T>(found: Option<T>) -> Result<T> {
+    found.ok_or_else(|| Error::Decode("expected one row, got none".into()))
+}
+
 enum Backend {
     Remote(hrana::Remote),
     Local {
@@ -131,6 +163,9 @@ impl Db {
             let path = cfg.url.strip_prefix("file:").unwrap_or(&cfg.url);
             let db = libsql::Builder::new_local(path).build().await?;
             let shared = (path == ":memory:").then(|| db.connect()).transpose()?;
+            if let Some(c) = &shared {
+                c.query("PRAGMA foreign_keys = ON", ()).await?;
+            }
             Backend::Local { db, shared }
         };
         Ok(Self {
@@ -152,20 +187,53 @@ impl Db {
     pub async fn execute(&self, sql: &str, params: &[Value]) -> Result<u64> {
         match &*self.backend {
             Backend::Remote(r) => Ok(r.execute(None, false, sql, params).await?.0.affected),
-            Backend::Local { .. } => local_execute(&self.local_conn()?.unwrap(), sql, params).await,
+            Backend::Local { .. } => {
+                local_execute(&self.local_conn().await?.unwrap(), sql, params).await
+            }
         }
     }
 
     pub async fn query(&self, sql: &str, params: &[Value]) -> Result<Vec<Row>> {
         match &*self.backend {
             Backend::Remote(r) => Ok(rows_of(r.execute(None, false, sql, params).await?.0)),
-            Backend::Local { .. } => local_query(&self.local_conn()?.unwrap(), sql, params).await,
+            Backend::Local { .. } => {
+                local_query(&self.local_conn().await?.unwrap(), sql, params).await
+            }
         }
     }
 
     /// The first row, if any.
     pub async fn query_opt(&self, sql: &str, params: &[Value]) -> Result<Option<Row>> {
         Ok(self.query(sql, params).await?.into_iter().next())
+    }
+
+    pub async fn query_as<T: FromRow>(&self, sql: &str, params: &[Value]) -> Result<Vec<T>> {
+        all(self.query(sql, params).await?)
+    }
+
+    pub async fn query_opt_as<T: FromRow>(&self, sql: &str, params: &[Value]) -> Result<Option<T>> {
+        self.query_opt(sql, params)
+            .await?
+            .as_ref()
+            .map(T::from_row)
+            .transpose()
+    }
+
+    pub async fn query_one_as<T: FromRow>(&self, sql: &str, params: &[Value]) -> Result<T> {
+        one(self.query_opt_as(sql, params).await?)
+    }
+
+    /// The first column of the first row, which must exist.
+    pub async fn scalar<T: FromValue>(&self, sql: &str, params: &[Value]) -> Result<T> {
+        one(self.query_opt(sql, params).await?)?.get(0)
+    }
+
+    /// The first column of the first row, if there is a row.
+    pub async fn scalar_opt<T: FromValue>(&self, sql: &str, params: &[Value]) -> Result<Option<T>> {
+        self.query_opt(sql, params)
+            .await?
+            .map(|r| r.get(0))
+            .transpose()
     }
 
     /// Start a transaction. Dropping it without [`Tx::commit`] rolls it back
@@ -180,7 +248,7 @@ impl Db {
                 }
             }
             Backend::Local { .. } => {
-                let conn = self.local_conn()?.unwrap();
+                let conn = self.local_conn().await?.unwrap();
                 conn.execute("BEGIN IMMEDIATE", ()).await?;
                 TxInner::Local(conn)
             }
@@ -225,6 +293,41 @@ impl Tx {
 
     pub async fn query_opt(&mut self, sql: &str, params: &[Value]) -> Result<Option<Row>> {
         Ok(self.query(sql, params).await?.into_iter().next())
+    }
+
+    pub async fn query_as<T: FromRow>(&mut self, sql: &str, params: &[Value]) -> Result<Vec<T>> {
+        all(self.query(sql, params).await?)
+    }
+
+    pub async fn query_opt_as<T: FromRow>(
+        &mut self,
+        sql: &str,
+        params: &[Value],
+    ) -> Result<Option<T>> {
+        self.query_opt(sql, params)
+            .await?
+            .as_ref()
+            .map(T::from_row)
+            .transpose()
+    }
+
+    pub async fn query_one_as<T: FromRow>(&mut self, sql: &str, params: &[Value]) -> Result<T> {
+        one(self.query_opt_as(sql, params).await?)
+    }
+
+    pub async fn scalar<T: FromValue>(&mut self, sql: &str, params: &[Value]) -> Result<T> {
+        one(self.query_opt(sql, params).await?)?.get(0)
+    }
+
+    pub async fn scalar_opt<T: FromValue>(
+        &mut self,
+        sql: &str,
+        params: &[Value],
+    ) -> Result<Option<T>> {
+        self.query_opt(sql, params)
+            .await?
+            .map(|r| r.get(0))
+            .transpose()
     }
 
     /// Several `;`-separated statements, no parameters.

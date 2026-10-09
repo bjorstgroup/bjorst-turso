@@ -270,3 +270,68 @@ async fn dates_and_decimals_round_trip_without_loss() {
     r.get::<DateTime<Utc>>("def").unwrap();
     r.get::<DateTime<Utc>>("sq").unwrap();
 }
+
+row_struct! {
+    #[derive(Debug, PartialEq)]
+    struct Person { id: i64, name: String, nick: Option<String> }
+}
+
+#[tokio::test]
+async fn rows_become_structs_and_scalars() {
+    let db = file_db().await;
+    db.execute(
+        "CREATE TABLE p (id INTEGER PRIMARY KEY, name TEXT NOT NULL, nick TEXT)",
+        &[],
+    )
+    .await
+    .unwrap();
+    db.execute("INSERT INTO p (name) VALUES ('a'), ('b')", &[])
+        .await
+        .unwrap();
+    let all: Vec<Person> = db
+        .query_as("SELECT * FROM p ORDER BY id", &[])
+        .await
+        .unwrap();
+    assert_eq!(
+        all[1],
+        Person {
+            id: 2,
+            name: "b".into(),
+            nick: None
+        }
+    );
+    assert!(db
+        .query_opt_as::<Person>("SELECT * FROM p WHERE id = ?1", &params![9])
+        .await
+        .unwrap()
+        .is_none());
+    assert!(db
+        .query_one_as::<Person>("SELECT * FROM p WHERE id = ?1", &params![9])
+        .await
+        .is_err());
+    assert_eq!(
+        db.scalar::<i64>("SELECT count(*) FROM p", &[])
+            .await
+            .unwrap(),
+        2
+    );
+    let mut tx = db.begin().await.unwrap();
+    let id: i64 = tx
+        .scalar("INSERT INTO p (name) VALUES ('c') RETURNING id", &[])
+        .await
+        .unwrap();
+    assert_eq!(id, 3);
+    tx.commit().await.unwrap();
+}
+
+#[tokio::test]
+async fn foreign_keys_are_enforced_locally_as_they_are_on_turso() {
+    let db = file_db().await;
+    db.execute("CREATE TABLE a (id INTEGER PRIMARY KEY)", &[])
+        .await
+        .unwrap();
+    db.execute("CREATE TABLE b (a_id INTEGER REFERENCES a(id))", &[])
+        .await
+        .unwrap();
+    assert!(db.execute("INSERT INTO b VALUES (99)", &[]).await.is_err());
+}
