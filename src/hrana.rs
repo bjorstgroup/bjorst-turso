@@ -29,7 +29,11 @@ impl Remote {
             .trim_end_matches('/')
             .to_owned();
         Self {
-            client: reqwest::Client::new(),
+            client: reqwest::Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(5))
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .expect("a client with only timeouts set builds"),
             endpoint: format!("{base}/v2/pipeline"),
             token,
         }

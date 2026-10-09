@@ -173,6 +173,14 @@ impl Db {
         })
     }
 
+    /// A handle to a remote database without connecting: nothing is sent until
+    /// the first call. For tests that point at an address nobody listens on.
+    pub fn remote(url: &str, token: impl Into<String>) -> Self {
+        Self {
+            backend: Arc::new(Backend::Remote(hrana::Remote::new(url, token.into()))),
+        }
+    }
+
     /// A local connection with foreign keys on, as Turso has them.
     async fn local_conn(&self) -> Result<Option<libsql::Connection>> {
         match &*self.backend {
