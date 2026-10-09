@@ -335,3 +335,21 @@ async fn foreign_keys_are_enforced_locally_as_they_are_on_turso() {
         .unwrap();
     assert!(db.execute("INSERT INTO b VALUES (99)", &[]).await.is_err());
 }
+
+#[test]
+fn params_take_owned_values_and_references() {
+    struct Dto {
+        name: String,
+        note: Option<String>,
+    }
+    let dto = Dto {
+        name: "n".into(),
+        note: None,
+    };
+    let p = params![&dto.name, &dto.note, dto.name, "lit", 5_i64, &5_i64, true];
+    assert_eq!(p[0], Value::Text("n".into()));
+    assert_eq!(p[1], Value::Null);
+    assert_eq!(p[3], Value::Text("lit".into()));
+    assert_eq!(p[5], Value::Integer(5));
+    assert_eq!(p[6], Value::Integer(1));
+}

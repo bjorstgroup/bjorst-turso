@@ -47,10 +47,11 @@ impl<T: Into<Value>> From<Option<T>> for Value {
     }
 }
 
-/// Build a parameter list: `params![id, "name", None::<i64>]`.
+/// Build a parameter list: `params![id, "name", None::<i64>]`. Each value is
+/// cloned, so `&dto.name` and `dto.name` both work.
 #[macro_export]
 macro_rules! params {
-    ($($v:expr),* $(,)?) => { [$($crate::Value::from($v)),*] };
+    ($($v:expr),* $(,)?) => { [$($crate::Value::from(($v).clone())),*] };
 }
 
 /// Read a column as a Rust type.
