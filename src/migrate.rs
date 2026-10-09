@@ -51,8 +51,20 @@ pub async fn migrate(db: &Db, migrations: &[Migration]) -> Result<()> {
             }
             continue;
         }
+        // BEGIN IMMEDIATE makes the check below safe: of two processes starting
+        // together, the second waits here and then finds the row.
         let mut tx = db.begin().await?;
         let applied = async {
+            if tx
+                .query_opt(
+                    "SELECT 1 FROM _migrations WHERE version = ?1",
+                    &params![m.version],
+                )
+                .await?
+                .is_some()
+            {
+                return Ok(0);
+            }
             tx.execute_batch(m.sql).await?;
             tx.execute(
                 "INSERT INTO _migrations (version, name, checksum) VALUES (?1, ?2, ?3)",

@@ -380,3 +380,16 @@ async fn tuples_scalars_and_json() {
     let j: Option<serde_json::Value> = db.scalar("SELECT j FROM p WHERE a = 1", &[]).await.unwrap();
     assert_eq!(j.unwrap()["k"][0], 1);
 }
+
+#[tokio::test]
+async fn two_migrators_at_once_apply_it_once() {
+    const ONE: Migration = Migration {
+        version: 1,
+        name: "t",
+        sql: "CREATE TABLE t (x INTEGER);",
+    };
+    let db = file_db().await;
+    let (a, b) = tokio::join!(migrate(&db, &[ONE]), migrate(&db, &[ONE]));
+    a.unwrap();
+    b.unwrap();
+}
