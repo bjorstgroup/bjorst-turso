@@ -23,6 +23,8 @@ default = []
 # Dates as ISO-8601 text, decimals as text: SQLite has neither type.
 chrono = ["dep:chrono"]
 bigdecimal = ["dep:bigdecimal"]
+# JSON columns as text.
+json = []
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

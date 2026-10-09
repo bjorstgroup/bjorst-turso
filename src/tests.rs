@@ -353,3 +353,30 @@ fn params_take_owned_values_and_references() {
     assert_eq!(p[5], Value::Integer(5));
     assert_eq!(p[6], Value::Integer(1));
 }
+
+#[tokio::test]
+async fn tuples_scalars_and_json() {
+    let db = file_db().await;
+    db.execute("CREATE TABLE p (a INTEGER, b TEXT, j TEXT)", &[])
+        .await
+        .unwrap();
+    db.execute(
+        "INSERT INTO p VALUES (1, 'x', ?1), (2, 'y', NULL)",
+        &params![serde_json::json!({"k": [1]})],
+    )
+    .await
+    .unwrap();
+    let t: Vec<(i64, String)> = db
+        .query_as("SELECT a, b FROM p ORDER BY a", &[])
+        .await
+        .unwrap();
+    assert_eq!(t, vec![(1, "x".to_string()), (2, "y".to_string())]);
+    assert_eq!(
+        db.scalars::<i64>("SELECT a FROM p ORDER BY a", &[])
+            .await
+            .unwrap(),
+        vec![1, 2]
+    );
+    let j: Option<serde_json::Value> = db.scalar("SELECT j FROM p WHERE a = 1", &[]).await.unwrap();
+    assert_eq!(j.unwrap()["k"][0], 1);
+}

@@ -124,6 +124,21 @@ macro_rules! row_struct {
     };
 }
 
+macro_rules! tuple_rows {
+    ($(($($t:ident $i:tt),+)),+) => {$(
+        impl<$($t: FromValue),+> FromRow for ($($t,)+) {
+            fn from_row(row: &Row) -> Result<Self> {
+                Ok(($(row.get::<$t>($i)?,)+))
+            }
+        }
+    )+};
+}
+tuple_rows!(
+    (A 0), (A 0, B 1), (A 0, B 1, C 2), (A 0, B 1, C 2, D 3), (A 0, B 1, C 2, D 3, E 4),
+    (A 0, B 1, C 2, D 3, E 4, F 5), (A 0, B 1, C 2, D 3, E 4, F 5, G 6),
+    (A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7)
+);
+
 fn all<T: FromRow>(rows: Vec<Row>) -> Result<Vec<T>> {
     rows.iter().map(T::from_row).collect()
 }
@@ -242,6 +257,15 @@ impl Db {
         one(self.query_opt(sql, params).await?)?.get(0)
     }
 
+    /// The first column of every row.
+    pub async fn scalars<T: FromValue>(&self, sql: &str, params: &[Value]) -> Result<Vec<T>> {
+        self.query(sql, params)
+            .await?
+            .iter()
+            .map(|r| r.get(0))
+            .collect()
+    }
+
     /// The first column of the first row, if there is a row.
     pub async fn scalar_opt<T: FromValue>(&self, sql: &str, params: &[Value]) -> Result<Option<T>> {
         self.query_opt(sql, params)
@@ -327,6 +351,14 @@ impl Tx {
 
     pub async fn query_one_as<T: FromRow>(&mut self, sql: &str, params: &[Value]) -> Result<T> {
         one(self.query_opt_as(sql, params).await?)
+    }
+
+    pub async fn scalars<T: FromValue>(&mut self, sql: &str, params: &[Value]) -> Result<Vec<T>> {
+        self.query(sql, params)
+            .await?
+            .iter()
+            .map(|r| r.get(0))
+            .collect()
     }
 
     pub async fn scalar<T: FromValue>(&mut self, sql: &str, params: &[Value]) -> Result<T> {

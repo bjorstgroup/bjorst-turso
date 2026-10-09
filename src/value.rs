@@ -188,3 +188,21 @@ impl FromValue for Value {
         Ok(v.clone())
     }
 }
+
+/// JSON columns are text.
+#[cfg(feature = "json")]
+mod json_impls {
+    use super::*;
+
+    impl From<serde_json::Value> for Value {
+        fn from(v: serde_json::Value) -> Self {
+            Value::Text(v.to_string())
+        }
+    }
+    impl FromValue for serde_json::Value {
+        fn from_value(v: &Value) -> Result<Self> {
+            let s = String::from_value(v)?;
+            serde_json::from_str(&s).map_err(|e| Error::Decode(format!("json: {e}")))
+        }
+    }
+}
