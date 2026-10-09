@@ -1,14 +1,31 @@
 [package]
 name = "bjorst-turso"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["Bjorst Engineering <engineering@bjorst.com>"]
 license = "MIT"
-description = "Turso (libSQL) connection builder and a versioned migration runner"
+description = "Turso client over Hrana/HTTP (no libsql remote stack), a local libSQL mode for tests, and a migration runner"
 
 [dependencies]
-libsql = { version = "0.9", default-features = false, features = ["core", "remote", "tls"] }
+# Local databases only: the `remote` feature drags in rustls 0.22 / h2 0.3,
+# which carry open RustSec advisories.
+libsql = { version = "0.9", default-features = false, features = ["core"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
 thiserror = "2"
+chrono = { version = "0.4", default-features = false, features = ["std"], optional = true }
+bigdecimal = { version = "0.4", optional = true }
+
+[features]
+default = []
+# Dates as ISO-8601 text, decimals as text: SQLite has neither type.
+chrono = ["dep:chrono"]
+bigdecimal = ["dep:bigdecimal"]
+# JSON columns as text.
+json = []
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+wiremock = "0.6"
