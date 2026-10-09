@@ -393,3 +393,36 @@ async fn two_migrators_at_once_apply_it_once() {
     a.unwrap();
     b.unwrap();
 }
+
+#[tokio::test]
+async fn another_databases_url_is_refused_not_opened_as_a_file() {
+    for url in [
+        "postgres://u:p@host/db",
+        "postgresql://host/db",
+        "mysql://host/db",
+        "wss://x.turso.io",
+    ] {
+        let cfg = TursoConfig {
+            url: url.into(),
+            auth_token: Some("t".into()),
+        };
+        assert!(
+            matches!(Db::connect(&cfg).await, Err(Error::UnsupportedUrl(_))),
+            "{url}"
+        );
+    }
+    // The error names the scheme and never the credentials.
+    let cfg = TursoConfig {
+        url: "postgres://user:secret@host/db".into(),
+        auth_token: None,
+    };
+    let msg = Db::connect(&cfg).await.err().unwrap().to_string();
+    assert!(!msg.contains("secret"), "{msg}");
+    // Files still open.
+    Db::connect(&TursoConfig {
+        url: ":memory:".into(),
+        auth_token: None,
+    })
+    .await
+    .unwrap();
+}

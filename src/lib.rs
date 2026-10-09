@@ -38,6 +38,14 @@ pub enum Error {
     Decode(String),
     #[error("a remote url ({0}) needs an auth token")]
     MissingToken(String),
+    /// A scheme this crate does not speak. **Refused rather than treated as a
+    /// file name**: a `postgres://` url left in `DATABASE_URL` after a move
+    /// would otherwise open an empty local database named after it and serve
+    /// an empty ledger without a word.
+    #[error(
+        "unsupported database url scheme in {0:?}: use libsql://, https://, file: or :memory:"
+    )]
+    UnsupportedUrl(String),
     #[error("migration {version} was applied with different SQL than it has now")]
     ChecksumMismatch { version: i64 },
 }
@@ -169,6 +177,13 @@ impl Db {
         let remote = ["libsql://", "https://", "http://"]
             .iter()
             .any(|p| cfg.url.starts_with(p));
+        if !remote && cfg.url.contains("://") {
+            // `file:` and bare paths have no `://`; anything with one is another
+            // database's address (postgres://, mysql://, wss://…).
+            return Err(Error::UnsupportedUrl(
+                cfg.url.split("://").next().unwrap_or("").to_owned() + "://…",
+            ));
+        }
         let backend = if remote {
             // Plain http is a local `turso dev` server, which wants no token.
             let token = cfg.auth_token.clone().filter(|t| !t.is_empty());
