@@ -170,11 +170,13 @@ impl Db {
             .iter()
             .any(|p| cfg.url.starts_with(p));
         let backend = if remote {
-            let token = cfg
-                .auth_token
-                .clone()
-                .filter(|t| !t.is_empty())
-                .ok_or_else(|| Error::MissingToken(cfg.url.clone()))?;
+            // Plain http is a local `turso dev` server, which wants no token.
+            let token = cfg.auth_token.clone().filter(|t| !t.is_empty());
+            let token = match token {
+                Some(t) => t,
+                None if cfg.url.starts_with("http://") => String::new(),
+                None => return Err(Error::MissingToken(cfg.url.clone())),
+            };
             Backend::Remote(hrana::Remote::new(&cfg.url, token))
         } else {
             let path = cfg.url.strip_prefix("file:").unwrap_or(&cfg.url);

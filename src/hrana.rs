@@ -46,10 +46,11 @@ impl Remote {
         baton: Option<&str>,
         requests: Vec<Json>,
     ) -> Result<(Vec<Json>, Option<String>)> {
-        let res = self
-            .client
-            .post(&self.endpoint)
-            .bearer_auth(&self.token)
+        let mut req = self.client.post(&self.endpoint);
+        if !self.token.is_empty() {
+            req = req.bearer_auth(&self.token);
+        }
+        let res = req
             .json(&json!({ "baton": baton, "requests": requests }))
             .send()
             .await?;
