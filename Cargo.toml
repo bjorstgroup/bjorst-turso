@@ -1,0 +1,14 @@
+[package]
+name = "bjorst-turso"
+version = "0.1.0"
+edition = "2021"
+authors = ["Bjorst Engineering <engineering@bjorst.com>"]
+license = "MIT"
+description = "Turso (libSQL) connection builder and a versioned migration runner"
+
+[dependencies]
+libsql = { version = "0.9", default-features = false, features = ["core", "remote", "tls"] }
+thiserror = "2"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
